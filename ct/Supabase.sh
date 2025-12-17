@@ -40,7 +40,10 @@ function update_script() {
     msg_error "Failed to change directory to /opt/supabase"
     exit 1
   fi
-  $STD docker compose pull
+  if ! $STD docker compose pull; then
+    msg_error "Failed to pull Docker images"
+    exit 1
+  fi
   $STD docker compose up -d
   msg_ok "Updated ${APP}"
 
