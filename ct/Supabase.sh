@@ -26,16 +26,20 @@ function update_script() {
 
   if [[ ! -d /opt/supabase ]]; then
     msg_error "No ${APP} Installation Found!"
-    exit
+    exit 1
   fi
 
   msg_info "Creating Backup"
-  BACKUP_FILE="/opt/supabase/backup_$(date +%Y%m%d_%H%M%S).tar.gz"
+  mkdir -p /opt/supabase-backups
+  BACKUP_FILE="/opt/supabase-backups/env_backup_$(date +%Y%m%d_%H%M%S).tar.gz"
   tar -czf "$BACKUP_FILE" -C /opt/supabase .env 2>/dev/null || true
   msg_ok "Backup Created"
 
   msg_info "Updating ${APP}"
-  cd /opt/supabase
+  if ! cd /opt/supabase; then
+    msg_error "Failed to change directory to /opt/supabase"
+    exit 1
+  fi
   $STD docker compose pull
   $STD docker compose up -d
   msg_ok "Updated ${APP}"
@@ -45,7 +49,7 @@ function update_script() {
   msg_ok "Cleanup Completed"
 
   msg_ok "Update Successful"
-  exit
+  exit 0
 }
 
 start
