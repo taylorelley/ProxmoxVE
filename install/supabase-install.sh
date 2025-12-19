@@ -7,7 +7,7 @@
 
 # Source framework functions if available, otherwise use fallbacks
 if [ -n "$FUNCTIONS_FILE_PATH" ]; then
-  source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
+  source "$FUNCTIONS_FILE_PATH"
   color
   verb_ip6
   catch_errors
