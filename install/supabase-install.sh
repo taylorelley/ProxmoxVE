@@ -146,13 +146,22 @@ if [ -f /opt/supabase/.env.example ]; then
 elif [ -f /tmp/supabase/.env.example ]; then
   cp /tmp/supabase/.env.example /opt/supabase/
   msg_ok "Copied .env.example from repository root"
+elif [ -f /tmp/supabase/docker/.env.example ]; then
+  cp /tmp/supabase/docker/.env.example /opt/supabase/
+  msg_ok "Copied .env.example from docker directory"
 elif [ -f /opt/supabase/volumes/api/.env.example ]; then
   cp /opt/supabase/volumes/api/.env.example /opt/supabase/
   msg_ok "Found .env.example in volumes/api/"
 else
-  msg_error ".env.example file not found. Creating from scratch."
-  # Create a basic .env file with required variables
-  touch /opt/supabase/.env.example
+  # Try to download official .env.example directly from GitHub
+  msg_info "Downloading official .env.example from Supabase repository"
+  if curl -fsSL https://raw.githubusercontent.com/supabase/supabase/master/docker/.env.example -o /opt/supabase/.env.example; then
+    msg_ok "Downloaded official .env.example"
+  else
+    msg_info ".env.example not available, will create comprehensive configuration"
+    # Don't create an empty file - let the configuration section handle this
+    rm -f /opt/supabase/.env.example
+  fi
 fi
 
 rm -rf /tmp/supabase
@@ -227,40 +236,151 @@ if [ -f /opt/supabase/.env.example ] && [ -s /opt/supabase/.env.example ]; then
   grep -q "^ANON_KEY=" /opt/supabase/.env || echo "ANON_KEY=${ANON_KEY}" >> /opt/supabase/.env
   grep -q "^SERVICE_ROLE_KEY=" /opt/supabase/.env || echo "SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}" >> /opt/supabase/.env
 else
-  # Create .env from scratch with all required variables
-  msg_info "Creating .env file from scratch"
+  # Create comprehensive .env from scratch with all Supabase variables
+  msg_info "Creating comprehensive .env file from scratch"
   cat > /opt/supabase/.env <<EOF
-# Database
+############
+# Secrets
+############
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-POSTGRES_DB=postgres
-POSTGRES_HOST=db
-POSTGRES_PORT=5432
-
-# API
 JWT_SECRET=${JWT_SECRET}
 ANON_KEY=${ANON_KEY}
 SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
-
-# Dashboard
 DASHBOARD_USERNAME=admin
 DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD}
 
-# URLs
-SUPABASE_PUBLIC_URL=http://${LOCAL_IP}:8000
-API_EXTERNAL_URL=http://${LOCAL_IP}:8000
-SITE_URL=http://${LOCAL_IP}:3000
+############
+# Database
+############
+POSTGRES_HOST=db
+POSTGRES_DB=postgres
+POSTGRES_PORT=5432
+# Default to "postgres" user; can be changed to "supabase_admin"
+POSTGRES_USER=postgres
 
-# Security
+############
+# API Proxy - Kong
+############
+KONG_HTTP_PORT=8000
+KONG_HTTPS_PORT=8443
+
+############
+# API - PostgREST
+############
+PGRST_DB_SCHEMAS=public,storage,graphql_public
+
+############
+# Auth - GoTrue
+############
+# General
+SITE_URL=http://${LOCAL_IP}:3000
+ADDITIONAL_REDIRECT_URLS=
+JWT_EXPIRY=3600
+DISABLE_SIGNUP=false
+API_EXTERNAL_URL=http://${LOCAL_IP}:8000
+
+# Mailer Config
+MAILER_URLPATHS_CONFIRMATION="/auth/v1/verify"
+MAILER_URLPATHS_INVITE="/auth/v1/verify"
+MAILER_URLPATHS_RECOVERY="/auth/v1/verify"
+MAILER_URLPATHS_EMAIL_CHANGE="/auth/v1/verify"
+
+# Email auth
+ENABLE_EMAIL_SIGNUP=true
+ENABLE_EMAIL_AUTOCONFIRM=false
+SMTP_ADMIN_EMAIL=admin@example.com
+SMTP_HOST=supabase-mail
+SMTP_PORT=2500
+SMTP_USER=fake_mail_user
+SMTP_PASS=fake_mail_password
+SMTP_SENDER_NAME=fake_sender
+
+# Phone auth
+ENABLE_PHONE_SIGNUP=true
+ENABLE_PHONE_AUTOCONFIRM=true
+
+############
+# Studio - Dashboard
+############
+STUDIO_DEFAULT_ORGANIZATION=Default Organization
+STUDIO_DEFAULT_PROJECT=Default Project
+STUDIO_PORT=3000
+SUPABASE_PUBLIC_URL=http://${LOCAL_IP}:8000
+
+# Deprecated: Use STUDIO_PORT instead
+PUBLIC_REST_URL=http://${LOCAL_IP}:8000/rest/v1/
+
+############
+# Functions - Edge Runtime
+############
+FUNCTIONS_VERIFY_JWT=false
+
+############
+# Logs - Logflare
+############
+LOGFLARE_LOGGER_BACKEND_API_KEY=${LOGFLARE_API_KEY}
+LOGFLARE_API_KEY=${LOGFLARE_API_KEY}
+
+# Change vector.schema to vector if you are using Postgres 13 or lower
+VECTOR_DB_SCHEMA=extensions
+
+############
+# Metrics - Prometheus
+############
+METRICS_ENABLED=true
+
+############
+# Analytics - BigQuery
+############
+BIGQUERY_PROJECT_ID=your-project
+
+############
+# Storage
+############
+STORAGE_BACKEND=file
+FILE_SIZE_LIMIT=52428800
+STORAGE_S3_REGION=local
+
+# Deprecated: Use FILE_SIZE_LIMIT instead
+FILE_STORAGE_BACKEND_PATH=/var/lib/storage
+GLOBAL_S3_BUCKET=supabase-storage-local
+
+############
+# Realtime
+############
+REALTIME_IP_VERSION=ipv4
+
+############
+# Image Transformation
+############
+IMGPROXY_ENABLE_WEBP_DETECTION=true
+
+############
+# PostgreSQL Vault
+############
 VAULT_ENC_KEY=${VAULT_ENC_KEY}
+
+############
+# Meta
+############
+PG_META_CRYPTO_KEY=${PG_META_CRYPTO_KEY}
+
+############
+# Auth - Secret Key Base
+############
 SECRET_KEY_BASE=${SECRET_KEY_BASE}
 
-# Logging
-LOGFLARE_API_KEY=${LOGFLARE_API_KEY}
+############
+# Pooler
+############
+DEFAULT_POOL_SIZE=20
+MAX_CLIENT_CONN=100
+
+############
+# Logflare
+############
 LOGFLARE_PUBLIC_ACCESS_TOKEN=${LOGFLARE_PUBLIC_TOKEN}
 LOGFLARE_PRIVATE_ACCESS_TOKEN=${LOGFLARE_PRIVATE_TOKEN}
-
-# Metadata
-PG_META_CRYPTO_KEY=${PG_META_CRYPTO_KEY}
 EOF
 fi
 
