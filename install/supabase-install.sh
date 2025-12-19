@@ -5,13 +5,38 @@
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
 # Source: https://supabase.com/
 
-source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
-color
-verb_ip6
-catch_errors
-setting_up_container
-network_check
-update_os
+# Source framework functions if available, otherwise use fallbacks
+if [ -n "$FUNCTIONS_FILE_PATH" ]; then
+  source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
+  color
+  verb_ip6
+  catch_errors
+  setting_up_container
+  network_check
+  update_os
+else
+  # Fallback functions for standalone execution
+  msg_info() { echo -e "\e[34m[INFO]\e[0m $1"; }
+  msg_ok() { echo -e "\e[32m[OK]\e[0m $1"; }
+  msg_error() { echo -e "\e[31m[ERROR]\e[0m $1"; }
+  color() { :; }
+  verb_ip6() { :; }
+  catch_errors() { set -euo pipefail; }
+  setting_up_container() { :; }
+  network_check() { :; }
+  update_os() {
+    msg_info "Updating System Packages"
+    apt-get update && apt-get upgrade -y
+    msg_ok "Updated System Packages"
+  }
+  motd_ssh() { :; }
+  customize() { :; }
+  cleanup_lxc() { :; }
+  STD=""
+
+  # Initialize
+  catch_errors
+fi
 
 msg_info "Installing Dependencies"
 $STD apt-get install -y \
@@ -99,8 +124,37 @@ if ! cd /opt/supabase; then
   msg_error "Failed to change directory to /opt/supabase"
   exit 1
 fi
-git clone --depth 1 https://github.com/supabase/supabase.git /tmp/supabase
+
+# Clone Supabase repository
+if ! git clone --depth 1 https://github.com/supabase/supabase.git /tmp/supabase; then
+  msg_error "Failed to clone Supabase repository"
+  exit 1
+fi
+
+# Copy docker files and verify .env.example exists
+if [ ! -d /tmp/supabase/docker ]; then
+  msg_error "Docker directory not found in Supabase repository"
+  rm -rf /tmp/supabase
+  exit 1
+fi
+
 cp -r /tmp/supabase/docker/* /opt/supabase/
+
+# Check for .env.example in multiple possible locations
+if [ -f /opt/supabase/.env.example ]; then
+  msg_ok "Found .env.example in /opt/supabase/"
+elif [ -f /tmp/supabase/.env.example ]; then
+  cp /tmp/supabase/.env.example /opt/supabase/
+  msg_ok "Copied .env.example from repository root"
+elif [ -f /opt/supabase/volumes/api/.env.example ]; then
+  cp /opt/supabase/volumes/api/.env.example /opt/supabase/
+  msg_ok "Found .env.example in volumes/api/"
+else
+  msg_error ".env.example file not found. Creating from scratch."
+  # Create a basic .env file with required variables
+  touch /opt/supabase/.env.example
+fi
+
 rm -rf /tmp/supabase
 msg_ok "Downloaded Supabase"
 
@@ -145,23 +199,71 @@ console.log(header+'.'+payload+'.'+signature);
 msg_ok "Generated Secure Credentials"
 
 msg_info "Configuring Supabase Environment"
-cp /opt/supabase/.env.example /opt/supabase/.env
 
-sed -i "s|POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${POSTGRES_PASSWORD}|" /opt/supabase/.env
-sed -i "s|JWT_SECRET=.*|JWT_SECRET=${JWT_SECRET}|" /opt/supabase/.env
-sed -i "s|ANON_KEY=.*|ANON_KEY=${ANON_KEY}|" /opt/supabase/.env
-sed -i "s|SERVICE_ROLE_KEY=.*|SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}|" /opt/supabase/.env
-sed -i "s|DASHBOARD_USERNAME=.*|DASHBOARD_USERNAME=admin|" /opt/supabase/.env
-sed -i "s|DASHBOARD_PASSWORD=.*|DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD}|" /opt/supabase/.env
-sed -i "s|VAULT_ENC_KEY=.*|VAULT_ENC_KEY=${VAULT_ENC_KEY}|" /opt/supabase/.env
-sed -i "s|SECRET_KEY_BASE=.*|SECRET_KEY_BASE=${SECRET_KEY_BASE}|" /opt/supabase/.env
-sed -i "s|LOGFLARE_API_KEY=.*|LOGFLARE_API_KEY=${LOGFLARE_API_KEY}|" /opt/supabase/.env
-sed -i "s|LOGFLARE_PUBLIC_ACCESS_TOKEN=.*|LOGFLARE_PUBLIC_ACCESS_TOKEN=${LOGFLARE_PUBLIC_TOKEN}|" /opt/supabase/.env
-sed -i "s|LOGFLARE_PRIVATE_ACCESS_TOKEN=.*|LOGFLARE_PRIVATE_ACCESS_TOKEN=${LOGFLARE_PRIVATE_TOKEN}|" /opt/supabase/.env
-sed -i "s|PG_META_CRYPTO_KEY=.*|PG_META_CRYPTO_KEY=${PG_META_CRYPTO_KEY}|" /opt/supabase/.env
-sed -i "s|SUPABASE_PUBLIC_URL=.*|SUPABASE_PUBLIC_URL=http://${LOCAL_IP}:8000|" /opt/supabase/.env
-sed -i "s|API_EXTERNAL_URL=.*|API_EXTERNAL_URL=http://${LOCAL_IP}:8000|" /opt/supabase/.env
-sed -i "s|SITE_URL=.*|SITE_URL=http://${LOCAL_IP}:3000|" /opt/supabase/.env
+# Copy .env.example to .env if it exists and has content
+if [ -f /opt/supabase/.env.example ] && [ -s /opt/supabase/.env.example ]; then
+  cp /opt/supabase/.env.example /opt/supabase/.env
+
+  # Update configuration using sed (will only replace if pattern exists)
+  sed -i "s|POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${POSTGRES_PASSWORD}|" /opt/supabase/.env
+  sed -i "s|JWT_SECRET=.*|JWT_SECRET=${JWT_SECRET}|" /opt/supabase/.env
+  sed -i "s|ANON_KEY=.*|ANON_KEY=${ANON_KEY}|" /opt/supabase/.env
+  sed -i "s|SERVICE_ROLE_KEY=.*|SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}|" /opt/supabase/.env
+  sed -i "s|DASHBOARD_USERNAME=.*|DASHBOARD_USERNAME=admin|" /opt/supabase/.env
+  sed -i "s|DASHBOARD_PASSWORD=.*|DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD}|" /opt/supabase/.env
+  sed -i "s|VAULT_ENC_KEY=.*|VAULT_ENC_KEY=${VAULT_ENC_KEY}|" /opt/supabase/.env
+  sed -i "s|SECRET_KEY_BASE=.*|SECRET_KEY_BASE=${SECRET_KEY_BASE}|" /opt/supabase/.env
+  sed -i "s|LOGFLARE_API_KEY=.*|LOGFLARE_API_KEY=${LOGFLARE_API_KEY}|" /opt/supabase/.env
+  sed -i "s|LOGFLARE_PUBLIC_ACCESS_TOKEN=.*|LOGFLARE_PUBLIC_ACCESS_TOKEN=${LOGFLARE_PUBLIC_TOKEN}|" /opt/supabase/.env
+  sed -i "s|LOGFLARE_PRIVATE_ACCESS_TOKEN=.*|LOGFLARE_PRIVATE_ACCESS_TOKEN=${LOGFLARE_PRIVATE_TOKEN}|" /opt/supabase/.env
+  sed -i "s|PG_META_CRYPTO_KEY=.*|PG_META_CRYPTO_KEY=${PG_META_CRYPTO_KEY}|" /opt/supabase/.env
+  sed -i "s|SUPABASE_PUBLIC_URL=.*|SUPABASE_PUBLIC_URL=http://${LOCAL_IP}:8000|" /opt/supabase/.env
+  sed -i "s|API_EXTERNAL_URL=.*|API_EXTERNAL_URL=http://${LOCAL_IP}:8000|" /opt/supabase/.env
+  sed -i "s|SITE_URL=.*|SITE_URL=http://${LOCAL_IP}:3000|" /opt/supabase/.env
+
+  # Ensure critical variables exist (append if not found in file)
+  grep -q "^POSTGRES_PASSWORD=" /opt/supabase/.env || echo "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}" >> /opt/supabase/.env
+  grep -q "^JWT_SECRET=" /opt/supabase/.env || echo "JWT_SECRET=${JWT_SECRET}" >> /opt/supabase/.env
+  grep -q "^ANON_KEY=" /opt/supabase/.env || echo "ANON_KEY=${ANON_KEY}" >> /opt/supabase/.env
+  grep -q "^SERVICE_ROLE_KEY=" /opt/supabase/.env || echo "SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}" >> /opt/supabase/.env
+else
+  # Create .env from scratch with all required variables
+  msg_info "Creating .env file from scratch"
+  cat > /opt/supabase/.env <<EOF
+# Database
+POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+POSTGRES_DB=postgres
+POSTGRES_HOST=db
+POSTGRES_PORT=5432
+
+# API
+JWT_SECRET=${JWT_SECRET}
+ANON_KEY=${ANON_KEY}
+SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
+
+# Dashboard
+DASHBOARD_USERNAME=admin
+DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD}
+
+# URLs
+SUPABASE_PUBLIC_URL=http://${LOCAL_IP}:8000
+API_EXTERNAL_URL=http://${LOCAL_IP}:8000
+SITE_URL=http://${LOCAL_IP}:3000
+
+# Security
+VAULT_ENC_KEY=${VAULT_ENC_KEY}
+SECRET_KEY_BASE=${SECRET_KEY_BASE}
+
+# Logging
+LOGFLARE_API_KEY=${LOGFLARE_API_KEY}
+LOGFLARE_PUBLIC_ACCESS_TOKEN=${LOGFLARE_PUBLIC_TOKEN}
+LOGFLARE_PRIVATE_ACCESS_TOKEN=${LOGFLARE_PRIVATE_TOKEN}
+
+# Metadata
+PG_META_CRYPTO_KEY=${PG_META_CRYPTO_KEY}
+EOF
+fi
+
 msg_ok "Configured Supabase Environment"
 
 msg_info "Starting Supabase Services"
