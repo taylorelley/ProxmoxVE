@@ -191,7 +191,11 @@ const payload = Buffer.from(JSON.stringify({
 })).toString('base64url');
 const signature = crypto.createHmac('sha256', '${JWT_SECRET}').update(header+'.'+payload).digest('base64url');
 console.log(header+'.'+payload+'.'+signature);
-") || { msg_error "Failed to generate ANON_KEY"; exit 1; }
+")
+if [ -z "$ANON_KEY" ]; then
+  msg_error "Failed to generate ANON_KEY"
+  exit 1
+fi
 
 SERVICE_ROLE_KEY=$(node -e "
 const crypto = require('crypto');
@@ -204,7 +208,11 @@ const payload = Buffer.from(JSON.stringify({
 })).toString('base64url');
 const signature = crypto.createHmac('sha256', '${JWT_SECRET}').update(header+'.'+payload).digest('base64url');
 console.log(header+'.'+payload+'.'+signature);
-") || { msg_error "Failed to generate SERVICE_ROLE_KEY"; exit 1; }
+")
+if [ -z "$SERVICE_ROLE_KEY" ]; then
+  msg_error "Failed to generate SERVICE_ROLE_KEY"
+  exit 1
+fi
 msg_ok "Generated Secure Credentials"
 
 msg_info "Configuring Supabase Environment"
