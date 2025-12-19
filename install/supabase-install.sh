@@ -41,8 +41,23 @@ else
   msg_info "Setting up Docker Repository (Official Debian Method)"
   # Following official Docker documentation: https://docs.docker.com/engine/install/debian/
 
-  # Create keyrings directory
-  install -m 0755 -d /etc/apt/keyrings
+  # Determine Debian codename with fallbacks to ensure valid apt sources
+  DEBIAN_CODENAME=""
+  if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    DEBIAN_CODENAME="${VERSION_CODENAME}"
+  fi
+
+  # Fallback to lsb_release if VERSION_CODENAME is empty
+  if [ -z "$DEBIAN_CODENAME" ] && command -v lsb_release &> /dev/null; then
+    DEBIAN_CODENAME=$(lsb_release -cs 2>/dev/null)
+  fi
+
+  # Final fallback to bookworm (current Debian stable)
+  if [ -z "$DEBIAN_CODENAME" ]; then
+    DEBIAN_CODENAME="bookworm"
+    msg_info "Could not detect Debian codename, using default: bookworm"
+  fi
 
   # Download Docker's official GPG key
   curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
@@ -52,7 +67,7 @@ else
   cat > /etc/apt/sources.list.d/docker.sources <<EOF
 Types: deb
 URIs: https://download.docker.com/linux/debian
-Suites: $(. /etc/os-release && echo "$VERSION_CODENAME")
+Suites: ${DEBIAN_CODENAME}
 Components: stable
 Signed-By: /etc/apt/keyrings/docker.asc
 EOF
