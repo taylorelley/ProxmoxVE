@@ -15,6 +15,7 @@ update_os
 
 msg_info "Installing Dependencies"
 $STD apt-get install -y \
+  ca-certificates \
   curl \
   sudo \
   mc \
@@ -33,24 +34,49 @@ msg_info "Installing Node.js"
 $STD apt-get install -y nodejs
 msg_ok "Installed Node.js"
 
-msg_info "Setting up Docker Repository"
-setup_deb822_repo \
-  "docker" \
-  "https://download.docker.com/linux/$(get_os_info id)/gpg" \
-  "https://download.docker.com/linux/$(get_os_info id)" \
-  "$(get_os_info codename)" \
-  "stable" \
-  "$(dpkg --print-architecture)"
-msg_ok "Set up Docker Repository"
+# Check if Docker is already installed
+if command -v docker &> /dev/null; then
+  msg_ok "Docker is already installed ($(docker --version))"
+else
+  msg_info "Setting up Docker Repository (Official Debian Method)"
+  # Following official Docker documentation: https://docs.docker.com/engine/install/debian/
 
-msg_info "Installing Docker"
-$STD apt-get install -y \
-  docker-ce \
-  docker-ce-cli \
-  containerd.io \
-  docker-buildx-plugin \
-  docker-compose-plugin
-msg_ok "Installed Docker"
+  # Create keyrings directory
+  install -m 0755 -d /etc/apt/keyrings
+
+  # Download Docker's official GPG key
+  curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+  chmod a+r /etc/apt/keyrings/docker.asc
+
+  # Add Docker repository to apt sources (deb822 format)
+  cat > /etc/apt/sources.list.d/docker.sources <<EOF
+Types: deb
+URIs: https://download.docker.com/linux/debian
+Suites: $(. /etc/os-release && echo "$VERSION_CODENAME")
+Components: stable
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF
+
+  # Update package index
+  $STD apt-get update
+  msg_ok "Set up Docker Repository"
+
+  msg_info "Installing Docker"
+  $STD apt-get install -y \
+    docker-ce \
+    docker-ce-cli \
+    containerd.io \
+    docker-buildx-plugin \
+    docker-compose-plugin
+  msg_ok "Installed Docker"
+
+  msg_info "Verifying Docker Installation"
+  if ! docker --version &> /dev/null; then
+    msg_error "Docker installation failed"
+    exit 1
+  fi
+  msg_ok "Docker installation verified ($(docker --version))"
+fi
 
 msg_info "Downloading Supabase"
 mkdir -p /opt/supabase
